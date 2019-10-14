@@ -1,0 +1,1 @@
+while inotifywait -e modify ./src/main.c; do clear && bash ./scripts/build.sh && ./program; done
