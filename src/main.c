@@ -12,30 +12,61 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <unistd.h>
+#include <stdbool.h> 
 
-#define THREADS_COUNT 5
-#define MAX_PRODUCTS 10
+#define CONSUMER_COUNT 5
+#define PRODUCER_COUNT 5
 
-sem_t producers, consumers;
-sem_t mutex;
+sem_t producers, consumers, managing;
 
-int products[MAX_PRODUCTS];
 int producedAmount = 0;
-int lastProduct = 0;
-int beforeFirstProduct = 0;
+int level[CONSUMER_COUNT + PRODUCER_COUNT];
+int lastToEnter[CONSUMER_COUNT + PRODUCER_COUNT - 1];
+
+void lock(int id)
+{
+  for (int i = 0; i < CONSUMER_COUNT + PRODUCER_COUNT - 1; i++) 
+  {
+    level[id] = i;
+    lastToEnter[i] = id;
+    while (true) 
+    {
+      bool ok1 = lastToEnter[i] == id;
+      bool ok2 = false;
+      for (int j = 0; j < CONSUMER_COUNT + PRODUCER_COUNT - 1; j++) 
+      {
+        if (i == j) 
+        {
+          continue;
+        }
+        if (level[j] > i) 
+        {
+          ok2 = true;
+        }
+      }
+      if (ok1 && ok2) 
+      {
+        continue;
+      }
+      break;
+    }
+  }
+} 
+
+void unlock(int id)
+{
+  level[id] = -1;
+}
 
 void *producer(void *arg)
 {
   int threadId = (int) arg;
   while (1) {
-    printf("[PRODUCER][THREAD_%d] Waiting consumers\n", threadId);
     sem_wait(&consumers);
-    sem_wait(&mutex);
-    lastProduct = (lastProduct + 1) / MAX_PRODUCTS;
-    products[lastProduct] = 1;
+    lock(threadId);
     producedAmount++;
-    printf("[PRODUCER][THREAD_%d] Produced in position %d\n", threadId, lastProduct);
-    sem_post(&mutex);
+    printf("[PRODUCER][THREAD_%d] Produced new product\n", threadId);
+    unlock(threadId);
     sem_post(&producers);
   }
 }
@@ -44,39 +75,38 @@ void *consumer(void *arg)
 {
   int threadId = (int) arg;
   while (1) {
-    sem_wait(&mutex);
-    if (producedAmount > 0) {
-      beforeFirstProduct = (beforeFirstProduct + 1) / MAX_PRODUCTS;
-      products[beforeFirstProduct] = 0;
-      producedAmount--;
-      printf("[CONSUMER][THREAD_%d] Consumed in position %d\n", threadId, producedAmount);
-      sem_post(&consumers);
-      sem_post(&mutex);
-      sem_wait(&producers);
-    } else {
-      sem_post(&mutex);
-    }
+    sem_post(&consumers);
+    sem_wait(&producers);
+    lock(threadId);
+    producedAmount--;
+    printf("[CONSUMER][THREAD_%d] Consumed product\n", threadId);
+    unlock(threadId);
   }
 }
 
 int main()
 {
+  for (int i = 0; i < CONSUMER_COUNT + PRODUCER_COUNT; i++)
+  {
+    level[i] = 0;
+  }
+
   sem_init(&producers, 0, 0);
   sem_init(&consumers, 0, 0);
-  sem_init(&mutex, 0, 1);
 
-  pthread_t producerThreads[THREADS_COUNT], consumerThreads[THREADS_COUNT];
+  pthread_t producerThreads[CONSUMER_COUNT + PRODUCER_COUNT], consumerThreads[CONSUMER_COUNT + PRODUCER_COUNT];
 
-  for (int i = 0; i < THREADS_COUNT; i++)
+  for (int i = 0; i < PRODUCER_COUNT; i++)
   {
 		pthread_create(&producerThreads[i], NULL, producer, (void *) i);
   }
 
-  for (int i = 0; i < THREADS_COUNT; i++)
+  for (int i = PRODUCER_COUNT; i < CONSUMER_COUNT + PRODUCER_COUNT; i++)
   {
 		pthread_create(&consumerThreads[i], NULL, consumer, (void *) i);
   }
 
   pthread_exit(NULL);	
+
   return 0;
 }
