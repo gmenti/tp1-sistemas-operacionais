@@ -1,1 +1,1 @@
-gcc ./src/main.c -pthread -o ./program
+gcc ./main.c -pthread -o ./program
